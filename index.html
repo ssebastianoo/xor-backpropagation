@@ -1,0 +1,1096 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Backpropagation, one scroll at a time · MLP on XOR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<style>
+:root{
+  --paper:#f3efe6; --card:#fffdf8; --ink:#1c1a17; --muted:#6f685c; --rule:#dcd4c4;
+  --c0:#2f5d8a; --c1:#e3962f; --fwd:#16807a; --bwd:#c2452d; --hl:#f2b705;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:'Fraunces',Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font:400 17px/1.62 'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+  background-image:radial-gradient(rgba(28,26,23,.07) 1px,transparent 1px);background-size:22px 22px}
+.mono{font-family:var(--mono)}
+b,strong{font-weight:600}
+em{font-style:italic}
+
+/* top bar */
+header.top{position:fixed;inset:0 0 auto 0;height:46px;display:flex;align-items:center;gap:1rem;padding:0 1.4rem;
+  background:rgba(243,239,230,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--rule);z-index:60;font-size:13px}
+header.top .brand{font-family:var(--serif);font-weight:600;font-size:15px}
+header.top .chap{font-family:var(--mono);color:var(--muted);font-size:12px;letter-spacing:.04em;margin-left:auto;transition:opacity .3s}
+header.top .bar{position:absolute;left:0;bottom:-1px;height:2px;background:var(--ink);width:0}
+
+/* hero */
+.hero{min-height:100vh;display:grid;place-items:center;position:relative;overflow:hidden;z-index:1}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.32;filter:saturate(.9)}
+.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(243,239,230,.92) 25%,rgba(243,239,230,.35) 75%)}
+.hero .inner{position:relative;z-index:2;max-width:62rem;padding:7rem 1.6rem 5rem}
+.kicker{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--serif);font-weight:800;font-size:clamp(2.7rem,7.4vw,6.4rem);line-height:.94;letter-spacing:-.025em;margin:.9rem 0 1.4rem}
+h1 em{font-weight:400;color:var(--bwd)}
+.hero .lead{font-size:clamp(1.05rem,1.7vw,1.3rem);max-width:40rem;color:#3a362f}
+.hero .meta{margin-top:2.2rem;display:flex;gap:1.6rem;flex-wrap:wrap;font:12px var(--mono);color:var(--muted)}
+.cue{position:absolute;bottom:1.6rem;left:50%;transform:translateX(-50%);z-index:2;font:12px var(--mono);color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:.4rem}
+.cue i{display:block;width:1px;height:38px;background:var(--ink);transform-origin:top;animation:cue 1.8s ease-in-out infinite}
+@keyframes cue{0%{transform:scaleY(0)}50%{transform:scaleY(1)}100%{transform:scaleY(0);transform-origin:bottom}}
+
+/* scrolly */
+.scrolly{display:grid;grid-template-columns:minmax(340px,5fr) 7fr;position:relative;z-index:1}
+.steps{padding:0 1.5rem 30vh 3rem;position:relative;z-index:2}
+.step{min-height:var(--len,110vh);display:flex;align-items:center}
+.card{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--ink);padding:1.4rem 1.6rem 1.5rem;max-width:31rem;
+  box-shadow:0 1px 0 rgba(0,0,0,.03),0 12px 30px -18px rgba(40,30,10,.25);opacity:.28;transform:translateY(12px);transition:opacity .45s,transform .45s}
+.step.active .card{opacity:1;transform:none}
+.card .num{font:600 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.card h2{font-family:var(--serif);font-weight:600;font-size:1.65rem;line-height:1.15;margin:.35rem 0 .7rem;letter-spacing:-.01em}
+.card p{margin:.6rem 0}
+.card ol{margin:.6rem 0 .6rem 1.2rem}
+.card li{margin:.2rem 0}
+.card .katex-display{margin:.7rem 0;font-size:1.02em;overflow-x:auto;overflow-y:hidden}
+.card.fwd{border-left-color:var(--fwd)} .card.bwd{border-left-color:var(--bwd)} .card.hl{border-left-color:var(--hl)}
+.tag{display:inline-block;font:600 11px var(--mono);padding:.05rem .4rem;border-radius:3px;vertical-align:1px}
+.tag.f{background:#d6ece9;color:var(--fwd)} .tag.b{background:#f6ddd6;color:var(--bwd)}
+.c0{color:var(--c0);font-weight:600} .c1{color:#b86f10;font-weight:600}
+.note{font-size:.88rem;color:var(--muted);border-top:1px dashed var(--rule);padding-top:.6rem;margin-top:.9rem}
+.toggle{display:inline-flex;border:1px solid var(--ink);border-radius:999px;overflow:hidden;margin:.3rem 0}
+.toggle button{font:600 12px var(--mono);background:none;border:0;padding:.35rem .8rem;cursor:pointer;color:var(--ink)}
+.toggle button.on{background:var(--ink);color:var(--paper)}
+.scroll-hint{font:11px var(--mono);color:var(--muted);margin-top:.8rem;display:flex;align-items:center;gap:.5rem}
+.scroll-hint::before{content:"";width:18px;height:1px;background:var(--muted)}
+
+.stage-wrap{position:relative}
+.stage{position:sticky;top:46px;height:calc(100vh - 46px);z-index:1}
+.scene{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .5s,visibility .5s;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.2rem 2rem 1.4rem;gap:.8rem}
+.scene.on{opacity:1;visibility:visible}
+canvas.field{width:min(100%,60vh);aspect-ratio:1;display:block;border:1px solid var(--rule);background:var(--card)}
+canvas.field.md{width:min(100%,50vh)}
+canvas.field.sm{width:min(100%,44vh)}
+.scene svg{width:100%;height:auto;display:block;overflow:visible}
+.legend{display:flex;gap:1.2rem;flex-wrap:wrap;justify-content:center;font:12px var(--mono);color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:.4rem}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.dot.c0{background:var(--c0)} .dot.c1{background:var(--c1)} .dot.ring{border:2.5px solid var(--muted);background:#fff;width:11px;height:11px}
+.line-key{width:18px;border-top:2px dashed var(--ink);display:inline-block}
+.readout{font:13px var(--mono);color:var(--ink);text-align:center;min-height:1.4em}
+.readout .k{color:var(--muted)}
+.big-count{font:600 13px var(--mono);letter-spacing:.06em}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;width:100%;max-width:900px}
+.trio figure{display:flex;flex-direction:column;gap:.45rem}
+.trio canvas{width:100%;aspect-ratio:1;border:1px solid var(--rule);background:var(--card)}
+.trio figcaption{font:12px/1.4 var(--mono);color:var(--muted)}
+.trio figcaption b{color:var(--ink);font-family:'IBM Plex Sans';font-size:14px}
+
+/* net svg */
+#net{max-width:900px}
+.edge{fill:none;stroke:var(--ink);stroke-linecap:round;opacity:.55;transition:stroke .25s,opacity .25s}
+.edge.neg{stroke-dasharray:7 6}
+.edge.fwd{stroke:var(--fwd);opacity:1}
+.edge.bwd{stroke:var(--bwd);opacity:1}
+.edge.thin{stroke-width:1.5}
+.node{fill:var(--card);stroke:var(--ink);stroke-width:1.6}
+.node.in{fill:#ece6d9}
+.divl{stroke:var(--rule);stroke-width:1.2}
+.sig{fill:var(--paper);stroke:var(--ink);stroke-width:1.2}
+.sig-t{font:italic 13px var(--serif);fill:var(--ink)}
+.cap-t{font:500 13px var(--mono);fill:var(--muted)}
+.val{font:600 14.5px var(--mono);fill:var(--ink);transition:opacity .2s}
+.val.big{font-size:16px}
+.lab rect{fill:var(--paper);stroke:var(--rule)}
+.lab text{font:500 12px var(--mono);fill:var(--ink)}
+.lab.hl rect{stroke:var(--hl);stroke-width:3;fill:#fff6d6}
+.badge rect{fill:var(--bwd)}
+.badge text{font:600 12px var(--mono);fill:#fff}
+.badge.zero rect{fill:#b9aea0}
+.dbadge rect{fill:#fbe6df;stroke:var(--bwd)}
+.dbadge text{font:600 12px var(--mono);fill:var(--bwd)}
+.badge.hl rect,.dbadge.hl rect{stroke:var(--hl);stroke-width:3.5}
+.pulse{r:6}
+.pulse.f{fill:var(--fwd)} .pulse.b{fill:var(--bwd)}
+.ylab{font:600 13px var(--mono);fill:var(--muted)}
+
+.ledger{width:100%;max-width:860px;overflow-x:auto;min-height:150px;background:var(--card);border:1px solid var(--rule);padding:.9rem 1.2rem;font-size:15px;display:flex;flex-direction:column;gap:.5rem;justify-content:center}
+.ledger .katex{font-size:1.08em}
+.ledger .lhead{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.ledger .cache{display:flex;gap:.4rem;flex-wrap:wrap;font:12px var(--mono)}
+.ledger .cache span{padding:.1rem .45rem;border:1px solid var(--rule);border-radius:3px;color:var(--muted)}
+.ledger .cache span.on{border-color:var(--fwd);color:var(--fwd);background:#e4f2ef}
+.ledger .cache span.g.on{border-color:var(--bwd);color:var(--bwd);background:#fbe9e4}
+.ledger table{border-collapse:collapse;font:12.5px var(--mono);width:100%}
+.ledger th{font-weight:600;color:var(--muted);text-align:right;padding:.1rem .5rem;border-bottom:1px solid var(--rule)}
+.ledger td{text-align:right;padding:.12rem .5rem}
+.ledger th:first-child,.ledger td:first-child{text-align:left}
+.ledger td.g{color:var(--bwd)}
+.ledger tr.zero td{color:#a39a8b}
+
+.axis{stroke:var(--ink);stroke-width:1}
+.grid{stroke:rgba(28,26,23,.08)}
+.tick{font:11px var(--mono);fill:var(--muted)}
+.axlab{font:italic 14px var(--serif);fill:var(--ink)}
+.curve{fill:none;stroke-width:2.5}
+.chips{display:flex;flex-wrap:wrap;gap:.35rem;justify-content:center;max-width:720px}
+.chips span{font:12px var(--mono);border:1px solid var(--rule);background:var(--card);padding:.12rem .45rem;border-radius:3px}
+.chips span i{font-style:normal;color:var(--muted)}
+.result{border-collapse:collapse;font:13px var(--mono);background:var(--card);border:1px solid var(--rule);transition:opacity .4s}
+.result th,.result td{padding:.3rem .9rem;text-align:right}
+.result th{color:var(--muted);font-weight:600;border-bottom:1px solid var(--rule)}
+.result td:first-child,.result th:first-child{text-align:left}
+
+/* sections after scrolly */
+section.flow{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:7rem 1.6rem}
+section.flow h2{font-family:var(--serif);font-weight:800;font-size:clamp(2rem,4.5vw,3.4rem);letter-spacing:-.02em;line-height:1}
+section.flow .sub{color:var(--muted);margin:.8rem 0 2.2rem;max-width:44rem}
+.pg{display:grid;grid-template-columns:minmax(280px,1fr) 1fr;gap:2rem;align-items:start}
+.pg canvas.field{width:min(100%,78vh);cursor:crosshair}
+.panel{background:var(--card);border:1px solid var(--rule);padding:1.2rem 1.3rem;display:flex;flex-direction:column;gap:1rem}
+.panel label{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:.35rem}
+.seg{display:flex;flex-wrap:wrap;gap:.35rem}
+.seg button,.btn{font:600 12px var(--mono);border:1px solid var(--ink);background:none;color:var(--ink);padding:.4rem .75rem;border-radius:999px;cursor:pointer}
+.seg button.on,.btn.primary{background:var(--ink);color:var(--paper)}
+input[type=range]{width:100%;accent-color:var(--ink)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem}
+.stat{border:1px solid var(--rule);padding:.5rem .6rem}
+.stat .k{font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.stat .v{font:600 18px var(--mono)}
+#pg-spark{width:100%;height:110px;display:block;border:1px solid var(--rule);background:#fff}
+.probe{font:12.5px var(--mono);color:var(--muted);min-height:2.6em}
+.recap{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem}
+.recap .r{background:var(--card);border:1px solid var(--rule);border-top:3px solid var(--ink);padding:1.1rem 1.1rem 1.2rem}
+.recap .r h3{font-family:var(--serif);font-weight:600;font-size:1.2rem;margin:.3rem 0 .4rem}
+.recap .r p{font-size:.92rem;color:#3a362f}
+.recap .r .katex-display{margin:.6rem 0;font-size:.95em;overflow-x:auto;overflow-y:hidden}
+.recap .r.f{border-top-color:var(--fwd)} .recap .r.b{border-top-color:var(--bwd)} .recap .r.u{border-top-color:var(--hl)}
+footer{position:relative;z-index:1;text-align:center;font:12px var(--mono);color:var(--muted);padding:2rem 1rem 4rem}
+
+@media (max-width:900px){
+  .scrolly{display:flex;flex-direction:column}
+  header.top>.mono{display:none}
+  .stage-wrap{order:-1;position:sticky;top:46px;height:56vh;z-index:3;background:var(--paper);border-bottom:1px solid var(--rule)}
+  .stage{position:relative;top:0;height:56vh}
+  .scene{padding:.6rem .8rem;gap:.4rem}
+  canvas.field,canvas.field.md,canvas.field.sm{width:min(100%,36vh)}
+  .ledger{font-size:12px;min-height:0;padding:.5rem .7rem}
+  .steps{padding:0 .9rem 40vh}
+  .step{min-height:calc(var(--len,110vh) * .8);align-items:flex-end;padding-bottom:6vh}
+  .card{padding:1rem 1.1rem}
+  .pg{grid-template-columns:1fr}
+  .recap{grid-template-columns:1fr 1fr}
+  .trio{gap:.4rem}
+}
+@media (prefers-reduced-motion:reduce){.cue i{animation:none}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="brand">Backprop, scrolled</span>
+  <span class="mono" style="color:var(--muted)">02 · loss · gradient descent · backpropagation</span>
+  <span class="chap" id="chap"></span>
+  <span class="bar" id="bar"></span>
+</header>
+
+<section class="hero">
+  <canvas id="hero-cv" width="900" height="900"></canvas>
+  <div class="inner">
+    <div class="kicker">MLP &amp; backpropagation in NumPy — visualised</div>
+    <h1>How nine numbers<br>learn <em>XOR</em>.</h1>
+    <p class="lead">How can we compute every gradient of a small neural network while <strong>reusing</strong> the intermediate derivatives shared by many parameters? Scroll to follow one example forward, its error backward, one gradient step, and then 2,000 of them.</p>
+    <div class="meta"><span>2 → 2 → 1 sigmoid MLP</span><span>binary cross-entropy</span><span>full-batch gradient descent</span><span>seed 42 · same data as the notebook</span></div>
+  </div>
+  <div class="cue">scroll<i></i></div>
+</section>
+
+<div class="scrolly">
+  <div class="steps">
+
+    <div class="step" data-step="data-intro" data-chapter="1 · Dataset" style="--len:150vh"><div class="card">
+      <div class="num">1 · Dataset</div>
+      <h2>Four noisy clouds</h2>
+      <p>We sample 25 points around each corner of the square $[-1,1]^2$ with Gaussian noise $\sigma = 0.28$. Opposite corners share a label: bottom-left and top-right are <span class="c0">class 0</span>, the other two are <span class="c1">class 1</span>.</p>
+      <p>This is the XOR pattern from TensorFlow Playground: <strong>no single straight line</strong> can separate the two colours. A hidden layer is needed.</p>
+      <div class="scroll-hint">scroll slowly — the clouds form as you go</div>
+    </div></div>
+
+    <div class="step" data-step="data-split" data-chapter="1 · Dataset" style="--len:120vh"><div class="card">
+      <div class="num">1 · Dataset</div>
+      <h2>Split before you fit</h2>
+      <p>Each cloud gives 20 points to training and 5 to test: an 80/20 split with both classes balanced (40/40 and 10/10).</p>
+      <p>Gradient descent will only ever see the <strong>80 filled points</strong>. The <strong>20 rings</strong> are held out until the very end, when the trained model is frozen.</p>
+    </div></div>
+
+    <div class="step" data-step="arch" data-chapter="2 · The network" style="--len:130vh"><div class="card">
+      <div class="num">2 · The network</div>
+      <h2>Two inputs, two hidden units, one output</h2>
+      $$\mathbf a = W\mathbf x+\mathbf b,\qquad \mathbf h=\sigma(\mathbf a)$$
+      $$z=\mathbf v^\top\mathbf h+c,\qquad \hat p=\sigma(z)$$
+      <p>That is <strong>9 trainable numbers</strong>: four in $W$, two in $\mathbf b$, two in $\mathbf v$, one $c$. The values $\mathbf a,\mathbf h, z,\hat p$ are <em>computed</em>, not learned.</p>
+      <p class="note">Edge thickness ∝ |weight|, dashed = negative. These are the slide parameters: $W = \left(\begin{smallmatrix}0.5&0.5\\-0.5&-0.5\end{smallmatrix}\right)$, $\mathbf b = \mathbf 0$, $\mathbf v = (1,-1)$, $c = 0$.</p>
+    </div></div>
+
+    <div class="step" data-step="inits" data-chapter="2 · The network" style="--len:110vh"><div class="card">
+      <div class="num">2 · The network</div>
+      <h2>Same function, different numbers</h2>
+      <p>Before training, the network's predictions depend entirely on where its parameters start. Here: the slide parameters and two random draws (<span class="mono">default_rng(0)</span>, <span class="mono">default_rng(1)</span>).</p>
+      <p>Background colour = $\hat p$ at that location; the black curve is $\hat p = 0.5$, the <strong>decision boundary</strong>. None of them solves XOR — and we judge them on the training set only, never on test scores.</p>
+    </div></div>
+
+    <div class="step" data-step="forward" data-chapter="3 · Forward pass" style="--len:230vh"><div class="card fwd">
+      <div class="num"><span class="tag f">forward</span> 3 · Compute and cache</div>
+      <h2>One example, left to right</h2>
+      <p>Push one labelled example through the network, one operation at a time. Each intermediate ($\mathbf x,\mathbf a,\mathbf h,z,\hat p$) is stored in a <strong>cache</strong>: the backward pass will need it, so we never recompute it.</p>
+      <div class="toggle" id="ex-toggle"><button data-x="1,2" class="on">x = (1, 2) · lecture</button><button data-x="0,0">x = (0, 0) · notebook run</button></div>
+      <p style="font-size:.9rem;color:var(--muted)">Target $y = 1$ in both cases. The toggle changes every number in the next steps.</p>
+      <div class="scroll-hint">scroll to advance one operation at a time</div>
+    </div></div>
+
+    <div class="step" data-step="loss" data-chapter="3 · Loss" style="--len:160vh"><div class="card">
+      <div class="num">3 · Loss</div>
+      <h2>How wrong is $\hat p$?</h2>
+      $$L=-y\log\hat p-(1-y)\log(1-\hat p)$$
+      <p>Binary cross-entropy. For $y=1$ it reduces to $-\log\hat p$: zero when the network is confidently right, <strong>exploding</strong> as $\hat p\to 0$. Scroll to drag the prediction towards the wrong answer.</p>
+      <p>Sigmoid and BCE are a lucky pair — the derivative w.r.t. the output pre-activation is just the error:</p>
+      $$\delta_z=\frac{\partial L}{\partial z}=\hat p-y$$
+    </div></div>
+
+    <div class="step" data-step="backward" data-chapter="4 · Backward pass" style="--len:240vh"><div class="card bwd">
+      <div class="num"><span class="tag b">backward</span> 4 · Walk the chain back</div>
+      <h2>Blame flows right to left</h2>
+      <ol>
+        <li>$\delta_z = \hat p - y$</li>
+        <li>$\nabla_{\mathbf v}L=\delta_z\mathbf h,\quad \nabla_cL=\delta_z$</li>
+        <li>$\boldsymbol\delta_h=\delta_z\,\mathbf v$</li>
+        <li>$\boldsymbol\delta_a=\boldsymbol\delta_h\odot\mathbf h\odot(1-\mathbf h)$ &nbsp;<span style="color:var(--muted);font-size:.85rem">(σ′)</span></li>
+        <li>$\nabla_WL=\boldsymbol\delta_a\mathbf x^\top,\quad \nabla_{\mathbf b}L=\boldsymbol\delta_a$</li>
+      </ol>
+      <p>Every formula reads only from the <strong>cache</strong> ($\mathbf x,\mathbf h,\hat p$) and from a $\delta$ computed one step earlier.</p>
+      <div class="scroll-hint">scroll to advance one step at a time</div>
+    </div></div>
+
+    <div class="step" data-step="reuse" data-chapter="4 · Backward pass" style="--len:170vh"><div class="card bwd">
+      <div class="num"><span class="tag b">backward</span> 4 · Why it is cheap</div>
+      <h2>Compute once, reuse many times</h2>
+      <p>$\delta_z$ is computed <strong>once</strong> and used <strong>five</strong> times: for $\nabla_c$, $\nabla_{v_1}$, $\nabla_{v_2}$, $\delta_{h_1}$, $\delta_{h_2}$.</p>
+      <p>Each $\delta_{a_i}$ is computed once and feeds three gradients: $\nabla_{W_{i1}}$, $\nabla_{W_{i2}}$, $\nabla_{b_i}$.</p>
+      <p>Differentiating each of the 9 parameters separately would redo the same chain-rule product again and again. <strong>Backpropagation is the chain rule plus bookkeeping</strong>: shared prefixes are computed once and cached.</p>
+    </div></div>
+
+    <div class="step" data-step="update" data-chapter="5 · Gradient step" style="--len:170vh"><div class="card hl">
+      <div class="num">5 · One gradient-descent update</div>
+      <h2>Everyone moves at once</h2>
+      $$\theta_{t+1}=\theta_t-\eta\,\nabla_\theta L(\theta_t),\qquad \eta = 0.1$$
+      <p>All 9 gradients were computed at the <strong>same</strong> $\theta_t$; only then do all parameters move together. Scroll and watch $\hat p$ creep towards $y=1$ while the loss drops.</p>
+      <p class="note" id="zero-x-note">Try the <span class="mono">x = (0, 0)</span> toggle above: then $\nabla_W L=\boldsymbol\delta_a\mathbf x^\top = 0$. An input that is zero gives its weights no blame, so $W$ does not move — exactly what the notebook's run shows.</p>
+    </div></div>
+
+    <div class="step" data-step="descent" data-chapter="5 · Gradient step" style="--len:150vh"><div class="card hl">
+      <div class="num">5 · Zoom out</div>
+      <h2>Following a slope</h2>
+      <p>Slice the loss along the direction $-\nabla L$: plot $L(\theta - \eta\,\nabla L)$ as a function of the step size $\eta$.</p>
+      <p>At $\eta=0$ the slope is $-\lVert\nabla L\rVert^2$ — the steepest way down. The update we just did is the ball rolling to $\eta = 0.1$: a small, safe step along the tangent.</p>
+    </div></div>
+
+    <div class="step" data-step="batch" data-chapter="6 · Whole training set" style="--len:220vh"><div class="card">
+      <div class="num">6 · Reuse the same functions on the training set</div>
+      <h2>Average 80 opinions</h2>
+      <p>Each training point runs the <strong>same</strong> <span class="mono">forward</span> and <span class="mono">backward</span> and votes for a gradient $g_i$. The update uses their mean:</p>
+      $$\nabla_\theta J=\frac{1}{n_{\text{train}}}\sum_{i=1}^{n_{\text{train}}}g_i$$
+      <p>Bars: <strong>solid</strong> = running mean, <strong>outline</strong> = the current point's vote. Single votes disagree wildly; the mean is the consensus. No new backward rule, and no test point ever enters this average.</p>
+      <div class="scroll-hint">scroll to visit the 80 points one by one</div>
+    </div></div>
+
+    <div class="step" data-step="train" data-chapter="7 · Training loop" style="--len:260vh"><div class="card">
+      <div class="num">7 · The training loop</div>
+      <h2>2,000 updates</h2>
+      <p>Restart from the slide parameters. Each tick: mean gradient over all 80 points, then one update with $\eta = 0.5$. 2,000 updates = 2,000 epochs = 160,000 example presentations.</p>
+      <p>The <strong>dashed lines</strong> are where each hidden unit's pre-activation is zero ($h_i = \tfrac12$). Watch them rotate into two parallel diagonals: the output unit fires when $h_1$ is on but $h_2$ is off — the band between the lines is <span class="c1">class 1</span>. XOR, solved by combining two linear cuts.</p>
+      <div class="scroll-hint">scroll to train</div>
+    </div></div>
+
+    <div class="step" data-step="test" data-chapter="7 · Held-out evaluation" style="--len:130vh"><div class="card">
+      <div class="num">7 · Held-out evaluation</div>
+      <h2>The test set's verdict</h2>
+      <p>Parameters are now frozen. The 20 rings finally enter: we only run the forward pass on them, no updates.</p>
+      <p>Train fits almost perfectly; test is a bit worse — one ring sits on the wrong side (circled). That is evidence for <em>this</em> split and distribution, not a guarantee for every input or seed.</p>
+    </div></div>
+
+    <div class="step" data-step="zero" data-chapter="8 · Failure case" style="--len:200vh"><div class="card bwd">
+      <div class="num">8 · Failure case</div>
+      <h2>Start at zero, stay at zero</h2>
+      <p>Initialise all 9 parameters to 0. Then $\mathbf h = (0.5, 0.5)$ and $\hat p = 0.5$ for every input.</p>
+      <ul style="margin-left:1.1rem">
+        <li>$\mathbf v = 0 \Rightarrow \boldsymbol\delta_a=\delta_z\mathbf v\odot\mathbf h\odot(1-\mathbf h)=0$: $W$ and $\mathbf b$ get no gradient.</li>
+        <li>Balanced data $\Rightarrow$ the mean of $\hat p - y$ is exactly 0: $\mathbf v$ and $c$ get none either.</li>
+      </ul>
+      <p>2,000 updates, zero movement; loss frozen at $\log 2 \approx 0.693$. Even on unbalanced data the two hidden units would stay <strong>identical twins</strong> forever: zero init never breaks the symmetry.</p>
+    </div></div>
+
+  </div>
+
+  <div class="stage-wrap"><div class="stage">
+    <div class="scene" data-scene="data">
+      <canvas id="cv-data" class="field"></canvas>
+      <div class="legend"><span><i class="dot c0"></i>class 0</span><span><i class="dot c1"></i>class 1</span><span id="lg-test" style="opacity:0"><i class="dot ring"></i>held-out test</span></div>
+      <div class="readout" id="data-read"></div>
+    </div>
+    <div class="scene" data-scene="inits">
+      <div class="trio">
+        <figure><canvas id="cv-i0"></canvas><figcaption id="cap-i0"></figcaption></figure>
+        <figure><canvas id="cv-i1"></canvas><figcaption id="cap-i1"></figcaption></figure>
+        <figure><canvas id="cv-i2"></canvas><figcaption id="cap-i2"></figcaption></figure>
+      </div>
+      <div class="legend"><span><i class="dot c0"></i>p̂ → 0</span><span><i class="dot c1"></i>p̂ → 1</span><span><i class="line-key" style="border-top-style:solid"></i>p̂ = 0.5</span></div>
+    </div>
+    <div class="scene" data-scene="net">
+      <svg id="net" viewBox="0 0 860 470"></svg>
+      <div class="ledger" id="ledger"></div>
+    </div>
+    <div class="scene" data-scene="loss">
+      <svg id="loss-svg" viewBox="0 0 660 420" style="max-width:760px"></svg>
+      <div class="readout" id="loss-read"></div>
+    </div>
+    <div class="scene" data-scene="descent">
+      <svg id="desc-svg" viewBox="0 0 660 420" style="max-width:760px"></svg>
+      <div class="readout" id="desc-read"></div>
+    </div>
+    <div class="scene" data-scene="batch">
+      <canvas id="cv-batch" class="field sm"></canvas>
+      <svg id="bars" viewBox="0 0 660 230" style="max-width:740px"></svg>
+      <div class="readout" id="batch-read"></div>
+    </div>
+    <div class="scene" data-scene="train">
+      <canvas id="cv-train" class="field md"></canvas>
+      <svg id="train-loss" viewBox="0 0 660 150" style="max-width:720px"></svg>
+      <div class="readout" id="train-read"></div>
+      <div class="chips" id="train-chips"></div>
+      <table class="result" id="result" style="opacity:0"></table>
+    </div>
+    <div class="scene" data-scene="zero">
+      <canvas id="cv-zero" class="field sm"></canvas>
+      <svg id="zero-loss" viewBox="0 0 660 150" style="max-width:720px"></svg>
+      <div class="readout" id="zero-read"></div>
+      <div class="chips" id="zero-chips"></div>
+    </div>
+  </div></div>
+</div>
+
+<section class="flow" id="playground">
+  <div class="kicker">your turn</div>
+  <h2>Playground</h2>
+  <p class="sub">The same forward, backward and full-batch update, running live in your browser. Pick an initialisation and a learning rate, press train. Click anywhere on the field to run a single forward pass at that point.</p>
+  <div class="pg">
+    <canvas id="cv-pg" class="field"></canvas>
+    <div class="panel">
+      <div><label>Initialisation</label>
+        <div class="seg" id="pg-init">
+          <button data-init="slide" class="on">slide params</button>
+          <button data-init="seed0">random · seed 0</button>
+          <button data-init="seed1">random · seed 1</button>
+          <button data-init="random">new random</button>
+          <button data-init="zero">all zeros</button>
+        </div></div>
+      <div><label>Learning rate <span style="text-transform:none">η</span> = <span id="pg-lr-v" class="mono">0.50</span></label><input type="range" id="pg-lr" min="-2" max="1" step="0.01" value="-0.301"></div>
+      <div><label>Updates per frame = <span id="pg-sp-v" class="mono">4</span></label><input type="range" id="pg-sp" min="1" max="40" step="1" value="4"></div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn primary" id="pg-play">▶ train</button>
+        <button class="btn" id="pg-step">+1 update</button>
+        <button class="btn" id="pg-reset">reset</button>
+        <button class="btn" id="pg-test">show test points</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">updates</div><div class="v" id="pg-e">0</div></div>
+        <div class="stat"><div class="k">train BCE</div><div class="v" id="pg-l">—</div></div>
+        <div class="stat"><div class="k">train / test acc</div><div class="v" id="pg-a">—</div></div>
+      </div>
+      <canvas id="pg-spark"></canvas>
+      <div class="probe" id="pg-probe">Click the field to probe a point.</div>
+    </div>
+  </div>
+</section>
+
+<section class="flow" style="padding-top:2rem">
+  <div class="kicker">recap</div>
+  <h2>Four moves, repeated</h2>
+  <p class="sub">Everything above is these four functions from the notebook, called in a loop.</p>
+  <div class="recap">
+    <div class="r f"><div class="kicker">forward</div><h3>Compute &amp; cache</h3>$$\mathbf h=\sigma(W\mathbf x+\mathbf b)$$$$\hat p=\sigma(\mathbf v^\top\mathbf h+c)$$<p>Keep $\mathbf x,\mathbf a,\mathbf h,z,\hat p$ — the backward pass reads them.</p></div>
+    <div class="r"><div class="kicker">loss</div><h3>Measure the error</h3>$$L=-y\log\hat p-(1-y)\log(1-\hat p)$$<p>With a sigmoid output, $\partial L/\partial z = \hat p - y$.</p></div>
+    <div class="r b"><div class="kicker">backward</div><h3>Reuse the deltas</h3>$$\boldsymbol\delta_a=\delta_z\mathbf v\odot\mathbf h\odot(1-\mathbf h)$$$$\nabla_W=\boldsymbol\delta_a\mathbf x^\top$$<p>Each $\delta$ computed once, shared by every parameter downstream of it.</p></div>
+    <div class="r u"><div class="kicker">update</div><h3>Step downhill</h3>$$\theta\leftarrow\theta-\eta\,\frac1n\sum_i g_i$$<p>Average over the training set, all parameters at once. Never touch the test set.</p></div>
+  </div>
+</section>
+
+<footer>Every number on this page is recomputed live in float64 from the notebook's dataset (NumPy seed 42). Matches the notebook: train BCE 0.714 → 0.018, test accuracy 0.95.</footer>
+
+<script>
+window.addEventListener('DOMContentLoaded', main);
+function main(){
+/* ===================== data (exported from the notebook, seed 42) ===================== */
+const DATA = {"train":[[-1.0047,-1.2389,0],[-0.754,-1.014,0],[1.2338,-0.9001,1],[1.3657,1.0614,0],[1.2353,-1.4836,1],[-1.4725,0.5948,1],[0.9561,0.9886,0],[-0.6577,-1.0433,0],[-1.0976,0.8705,1],[0.8167,1.1249,0],[1.4097,-1.3329,1],[1.0616,-0.6194,1],[0.8941,-0.6362,1],[-0.8967,-1.2685,0],[0.9986,0.9542,0],[1.2348,0.7472,0],[-0.8691,-1.2406,0],[-0.8248,0.9134,1],[0.8336,-1.4049,1],[-0.4003,-1.1138,0],[0.8286,-1.0394,1],[0.5311,0.8638,0],[-0.9147,-1.2912,0],[1.2608,1.1078,0],[-0.7598,0.9464,1],[0.7386,-1.0575,1],[1.4421,1.0448,0],[-0.8721,0.8147,1],[-1.077,1.4186,1],[1.0651,-0.9939,1],[-0.9544,1.1641,1],[0.5882,-1.2844,1],[-1.1185,0.9777,1],[0.6169,1.4623,0],[1.2985,-0.956,1],[0.734,-1.0949,1],[1.4485,-1.067,1],[-1.2574,1.1392,1],[-0.7538,-0.7822,0],[-1.1199,-1.0986,0],[-1.1196,1.0444,1],[0.8209,-1.2594,1],[1.1801,0.8895,0],[0.8849,1.3098,0],[-1.1434,-1.2279,0],[-0.8099,-0.9811,0],[-1.2424,1.2711,1],[1.0365,1.2752,0],[-1.1314,1.0035,1],[0.7724,-1.1163,1],[-0.8009,1.2221,1],[1.1201,1.43,0],[-0.8844,-0.8794,0],[-1.3348,1.1364,1],[-0.7919,-0.8479,0],[-0.919,1.1768,1],[0.69,0.7495,0],[-1.0518,-1.1907,0],[-0.8881,0.7465,1],[-0.9642,-1.0885,0],[0.8602,0.6682,0],[-0.851,-0.8977,0],[1.116,-1.2771,1],[-1.3572,0.6827,1],[0.8927,1.4092,0],[-1.4712,0.9062,1],[0.8726,0.6568,0],[0.9002,-0.7935,1],[1.0202,-1.1483,1],[-0.9601,1.1933,1],[-0.7899,-0.7366,0],[1.1778,-1.0622,1],[0.8909,-1.3855,1],[1.4826,0.9497,0],[0.7298,0.7969,0],[-0.9815,-0.6844,0],[0.6422,1.0483,0],[-1.3704,0.7208,1],[-1.5463,-1.3646,0],[-1.2309,-0.8178,0]],"test":[[1.1216,-0.9334,1],[-1.0319,-1.2352,0],[0.9849,1.495,0],[0.7134,-0.9498,1],[1.0513,0.6571,0],[-0.8275,-0.6839,0],[-1.1017,0.8931,1],[0.403,-0.925,1],[-0.8137,0.9724,1],[0.9556,0.71,0],[-1.1863,-0.935,0],[1.0878,-0.7653,1],[-1.408,0.9105,1],[-1.1317,0.8211,1],[1.5591,-0.1841,1],[-0.9673,-0.9388,0],[1.596,0.77,0],[-0.8654,1.125,1],[-0.756,-0.9374,0],[0.9668,1.08,0]]};
+const TRAIN = DATA.train, TEST = DATA.test;
+
+/* ===================== helpers ===================== */
+const $ = s => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+const S = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+const fmt = (v, d = 3) => { if (Math.abs(v) < 0.5 * Math.pow(10, -d)) v = 0; return (v < 0 ? '−' : '') + Math.abs(v).toFixed(d); };
+const fmtT = (v, d = 3) => fmt(v, d).replace('−', '-');
+const K = (s, display = false) => window.katex ? katex.renderToString(s, { throwOnError: false, displayMode: display }) : s;
+const vecT = (a, d = 3) => `\\begin{pmatrix}${a.map(v => fmtT(v, d)).join('\\\\')}\\end{pmatrix}`;
+const matT = (m, d = 3) => `\\begin{pmatrix}${m.map(r => r.map(v => fmtT(v, d)).join('&')).join('\\\\')}\\end{pmatrix}`;
+
+/* ===================== the model (mirrors the notebook) ===================== */
+const sig = v => 1 / (1 + Math.exp(-v));
+const bce = (y, p) => -(y * Math.log(p) + (1 - y) * Math.log(1 - p));
+function forward(P, x) {
+  const a = [P.W[0][0] * x[0] + P.W[0][1] * x[1] + P.b[0], P.W[1][0] * x[0] + P.W[1][1] * x[1] + P.b[1]];
+  const h = a.map(sig);
+  const z = P.v[0] * h[0] + P.v[1] * h[1] + P.c;
+  return { x, a, h, z, p: sig(z) };
+}
+function backward(P, C, y) {
+  const dz = C.p - y;
+  const gv = [dz * C.h[0], dz * C.h[1]];
+  const dh = [dz * P.v[0], dz * P.v[1]];
+  const da = [dh[0] * C.h[0] * (1 - C.h[0]), dh[1] * C.h[1] * (1 - C.h[1])];
+  const gW = [[da[0] * C.x[0], da[0] * C.x[1]], [da[1] * C.x[0], da[1] * C.x[1]]];
+  return { g: { W: gW, b: da.slice(), v: gv, c: dz }, dz, dh, da };
+}
+const PN = ['W11', 'W12', 'W21', 'W22', 'b1', 'b2', 'v1', 'v2', 'c'];
+const PL = { W11: 'w₁₁', W12: 'w₁₂', W21: 'w₂₁', W22: 'w₂₂', b1: 'b₁', b2: 'b₂', v1: 'v₁', v2: 'v₂', c: 'c' };
+const flat = P => [P.W[0][0], P.W[0][1], P.W[1][0], P.W[1][1], P.b[0], P.b[1], P.v[0], P.v[1], P.c];
+const unflat = a => ({ W: [[a[0], a[1]], [a[2], a[3]]], b: [a[4], a[5]], v: [a[6], a[7]], c: a[8] });
+function probXY(f, x, y) { // f = flat params, fast path
+  const h1 = sig(f[0] * x + f[1] * y + f[4]), h2 = sig(f[2] * x + f[3] * y + f[5]);
+  return sig(f[6] * h1 + f[7] * h2 + f[8]);
+}
+function batchGrad(P, pts) {
+  let L = 0; const G = new Array(9).fill(0);
+  for (const [x1, x2, y] of pts) {
+    const C = forward(P, [x1, x2]); L += bce(y, C.p);
+    const g = flat(backward(P, C, y).g); for (let k = 0; k < 9; k++) G[k] += g[k];
+  }
+  const n = pts.length; return { L: L / n, G: G.map(v => v / n) };
+}
+function train(P0, pts, n, lr) {
+  let a = flat(P0); const snaps = [a.slice()], losses = [];
+  for (let i = 0; i < n; i++) {
+    const { L, G } = batchGrad(unflat(a), pts); losses.push(L);
+    a = a.map((v, k) => v - lr * G[k]); snaps.push(a.slice());
+  }
+  losses.push(batchGrad(unflat(a), pts).L);
+  return { snaps, losses };
+}
+function evaluate(f, pts) {
+  let L = 0, ok = 0; const wrong = [];
+  pts.forEach(([x, y, c], i) => { const p = probXY(f, x, y); L += bce(c, p); if ((p >= .5) === (c === 1)) ok++; else wrong.push(i); });
+  return { L: L / pts.length, acc: ok / pts.length, wrong };
+}
+
+const SLIDE = { W: [[.5, .5], [-.5, -.5]], b: [0, 0], v: [1, -1], c: 0 };
+const SEED0 = { W: [[0.12573, -0.132105], [0.640423, 0.1049]], b: [-0.535669, 0.361595], v: [1.304, 0.947081], c: -0.703735 };
+const SEED1 = { W: [[0.345584, 0.821618], [0.330437, -1.303157]], b: [0.905356, 0.446375], v: [-0.536953, 0.581118], c: 0.364572 };
+const ZEROS = unflat(new Array(9).fill(0));
+
+const RUN = train(SLIDE, TRAIN, 2000, 0.5);
+const ZRUN = train(ZEROS, TRAIN, 2000, 0.5);
+const FINAL = RUN.snaps[2000];
+
+/* ===================== field drawing ===================== */
+const DOM = 1.8;
+const PAPER = [250, 247, 240], C0 = [47, 93, 138], C1 = [227, 150, 47];
+const off = document.createElement('canvas');
+function fit(c) {
+  const r = c.getBoundingClientRect(); const d = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.round(r.width * d), h = Math.round(r.height * d);
+  if (w > 0 && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; }
+  return d;
+}
+function fieldColor(p) {
+  const t = Math.min(1, Math.abs(p - .5) * 2), k = Math.pow(t, .85) * .62, C = p > .5 ? C1 : C0;
+  return [PAPER[0] + (C[0] - PAPER[0]) * k, PAPER[1] + (C[1] - PAPER[1]) * k, PAPER[2] + (C[2] - PAPER[2]) * k];
+}
+function march(v, n, L) {
+  const segs = [];
+  for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+    const a = v[j * n + i] - L, b = v[j * n + i + 1] - L, c = v[(j + 1) * n + i + 1] - L, d = v[(j + 1) * n + i] - L;
+    const pts = [];
+    const e = (p, q, x0, y0, x1, y1) => { if ((p > 0) !== (q > 0)) { const t = p / (p - q); pts.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]); } };
+    e(a, b, i, j, i + 1, j); e(b, c, i + 1, j, i + 1, j + 1); e(c, d, i + 1, j + 1, i, j + 1); e(d, a, i, j + 1, i, j);
+    if (pts.length === 2) segs.push(pts); else if (pts.length === 4) { segs.push([pts[0], pts[1]]); segs.push([pts[2], pts[3]]); }
+  }
+  return segs;
+}
+/* o: {f (flat params) | null, n, points:[{x,y,c,kind,a,hl,bad,r}], lines, fixed, fieldAlpha, quads} */
+function drawField(c, o = {}) {
+  const d = o.fixed ? 1 : fit(c);
+  const ctx = c.getContext('2d'), Sz = c.width;
+  const X = x => (x + DOM) / (2 * DOM) * Sz, Y = y => (DOM - y) / (2 * DOM) * Sz;
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.fillStyle = `rgb(${PAPER.join(',')})`; ctx.fillRect(0, 0, Sz, Sz);
+  let vals = null; const n = o.n || 70;
+  if (o.f) {
+    off.width = n; off.height = n; const octx = off.getContext('2d'); const img = octx.createImageData(n, n);
+    vals = new Float64Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = -DOM + (i + .5) / n * 2 * DOM, y = DOM - (j + .5) / n * 2 * DOM;
+      const p = probXY(o.f, x, y), col = fieldColor(p), k = (j * n + i) * 4;
+      vals[j * n + i] = p; img.data[k] = col[0]; img.data[k + 1] = col[1]; img.data[k + 2] = col[2]; img.data[k + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.save(); ctx.globalAlpha = o.fieldAlpha ?? 1; ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(off, 0, 0, Sz, Sz); ctx.restore();
+  }
+  // grid
+  ctx.strokeStyle = 'rgba(28,26,23,.09)'; ctx.lineWidth = d;
+  for (const v of [-1, 0, 1]) { ctx.beginPath(); ctx.moveTo(X(v), 0); ctx.lineTo(X(v), Sz); ctx.moveTo(0, Y(v)); ctx.lineTo(Sz, Y(v)); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(28,26,23,.4)'; ctx.font = `${10 * d}px JetBrains Mono, monospace`;
+  for (const v of [-1, 1]) { ctx.fillText(String(v), X(v) + 3 * d, Sz - 5 * d); ctx.fillText(String(v), 4 * d, Y(v) - 3 * d); }
+  if (o.quads) {
+    ctx.save(); ctx.globalAlpha = o.quads; ctx.font = `600 ${12 * d}px JetBrains Mono, monospace`; ctx.textAlign = 'center';
+    [[-1, -1, 0], [-1, 1, 1], [1, -1, 1], [1, 1, 0]].forEach(([cx, cy, l]) => {
+      ctx.fillStyle = l ? '#b86f10' : '#2f5d8a';
+      ctx.fillText(`y = ${l}`, X(cx), Y(cy * 1.68) + 4 * d);
+    });
+    ctx.restore();
+  }
+  // decision boundary
+  if (vals) {
+    let mx = 0; for (const v of vals) mx = Math.max(mx, Math.abs(v - .5));
+    if (mx > 1e-6) {
+      const segs = march(vals, n, .5), sc = Sz / n;
+      ctx.strokeStyle = '#1c1a17'; ctx.lineWidth = 2.2 * d; ctx.lineCap = 'round'; ctx.beginPath();
+      for (const [[x0, y0], [x1, y1]] of segs) { ctx.moveTo((x0 + .5) * sc, (y0 + .5) * sc); ctx.lineTo((x1 + .5) * sc, (y1 + .5) * sc); }
+      ctx.stroke();
+    }
+  }
+  // hidden-unit lines a_i = 0
+  if (o.lines && o.f) {
+    const f = o.f;
+    [[f[0], f[1], f[4]], [f[2], f[3], f[5]]].forEach(([w1, w2, b], i) => {
+      if (Math.abs(w1) + Math.abs(w2) < 1e-9) return;
+      let p0, p1;
+      if (Math.abs(w2) > Math.abs(w1)) { p0 = [-3, -(w1 * -3 + b) / w2]; p1 = [3, -(w1 * 3 + b) / w2]; }
+      else { p0 = [-(w2 * -3 + b) / w1, -3]; p1 = [-(w2 * 3 + b) / w1, 3]; }
+      ctx.save(); ctx.setLineDash([7 * d, 6 * d]); ctx.strokeStyle = 'rgba(28,26,23,.75)'; ctx.lineWidth = 1.5 * d;
+      ctx.beginPath(); ctx.moveTo(X(p0[0]), Y(p0[1])); ctx.lineTo(X(p1[0]), Y(p1[1])); ctx.stroke(); ctx.setLineDash([]);
+      // label near where the line is inside the box
+      const t = .5, lx = lerp(p0[0], p1[0], t), ly = lerp(p0[1], p1[1], t);
+      let px = X(clamp(lx, -1.6, 1.6)), py = Y(clamp(ly, -1.6, 1.6));
+      if (Math.abs(w2) > Math.abs(w1)) { px = X(1.45); py = Y(-(w1 * 1.45 + b) / w2); }
+      else { py = Y(1.45); px = X(-(w2 * 1.45 + b) / w1); }
+      if (px > 0 && px < Sz && py > 0 && py < Sz) {
+        ctx.font = `600 ${11 * d}px JetBrains Mono, monospace`; const txt = `h${'₁₂'[i]}=½`; const w = ctx.measureText(txt).width;
+        ctx.fillStyle = 'rgba(255,253,248,.92)'; ctx.fillRect(px - w / 2 - 4 * d, py - 9 * d, w + 8 * d, 17 * d);
+        ctx.fillStyle = '#1c1a17'; ctx.textAlign = 'center'; ctx.fillText(txt, px, py + 4 * d); ctx.textAlign = 'start';
+      }
+      ctx.restore();
+    });
+  }
+  // points
+  for (const p of o.points || []) {
+    const a = p.a ?? 1; if (a <= 0) continue;
+    const r = (p.r || 5) * d, px = X(p.x), py = Y(p.y);
+    ctx.globalAlpha = a; ctx.beginPath(); ctx.arc(px, py, r, 0, 7);
+    const col = p.c ? '#e3962f' : '#2f5d8a';
+    if (p.kind === 'test') { ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2.6 * d; ctx.strokeStyle = col; ctx.stroke(); }
+    else { ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = 1.2 * d; ctx.strokeStyle = '#fff'; ctx.stroke(); }
+    if (p.hl) { ctx.beginPath(); ctx.arc(px, py, r + 7 * d, 0, 7); ctx.lineWidth = 2.5 * d; ctx.strokeStyle = '#1c1a17'; ctx.stroke(); }
+    if (p.bad) { ctx.beginPath(); ctx.arc(px, py, r + 8 * d, 0, 7); ctx.lineWidth = 2.5 * d; ctx.strokeStyle = '#c2452d'; ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  }
+  return { X, Y, d };
+}
+
+/* ===================== hero ===================== */
+drawField($('#hero-cv'), { f: FINAL, fixed: true, n: 90, lines: false, points: TRAIN.map(([x, y, c]) => ({ x, y, c, r: 4 })) });
+
+/* ===================== scene: data ===================== */
+const nearestCenter = (x, y, c) => { const cs = c ? [[-1, 1], [1, -1]] : [[-1, -1], [1, 1]]; return cs.reduce((b, q) => Math.hypot(q[0] - x, q[1] - y) < Math.hypot(b[0] - x, b[1] - y) ? q : b); };
+const ALL = [...TRAIN.map(p => [...p, 'train']), ...TEST.map(p => [...p, 'test'])].map(([x, y, c, kind], i) => {
+  const [cx, cy] = nearestCenter(x, y, c); const h = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
+  return { x, y, c, kind, cx, cy, delay: h };
+});
+function renderData(t, split) {
+  const pts = ALL.map(p => {
+    const k = clamp((t * 1.7 - p.delay * .7)), e = ease(k);
+    const isTest = p.kind === 'test' && split > .15 + p.delay * .5;
+    return { x: lerp(p.cx, p.x, e), y: lerp(p.cy, p.y, e), c: p.c, kind: isTest ? 'test' : 'train', a: clamp(k * 4), r: isTest ? 5.5 : 5 };
+  });
+  drawField($('#cv-data'), { points: pts, quads: clamp(t * 2) * (1 - split) });
+  $('#lg-test').style.opacity = clamp(split * 3);
+  const shown = Math.round(100 * clamp(t * 1.2));
+  $('#data-read').innerHTML = split > 0
+    ? `<span class="k">train</span> 80 <span class="k">(40/40) ·</span> <span class="k">test</span> 20 <span class="k">(10/10)</span>`
+    : `<span class="k">points</span> ${shown}/100 <span class="k">· noise σ = 0.28</span>`;
+}
+
+/* ===================== scene: initialisations ===================== */
+function renderInits() {
+  [['Slide parameters', SLIDE], ['Random seed 0', SEED0], ['Random seed 1', SEED1]].forEach(([name, P], i) => {
+    const f = flat(P), ev = evaluate(f, TRAIN);
+    drawField($('#cv-i' + i), { f, n: 60, points: TRAIN.map(([x, y, c]) => ({ x, y, c, r: 3.5 })) });
+    $('#cap-i' + i).innerHTML = `<b>${name}</b><br>train BCE ${fmt(ev.L)} · acc ${fmt(ev.acc, 2)}`;
+  });
+}
+
+/* ===================== scene: network ===================== */
+const EX = { x: [1, 2], y: 1 };
+let UPD = null;
+function computeUpdate() {
+  const C = forward(SLIDE, EX.x), B = backward(SLIDE, C, EX.y), G = flat(B.g);
+  const old = flat(SLIDE), nw = old.map((v, k) => v - 0.1 * G[k]);
+  const C2 = forward(unflat(nw), EX.x);
+  UPD = { G, old, nw, p0: C.p, p1: C2.p, L0: bce(EX.y, C.p), L1: bce(EX.y, C2.p) };
+}
+computeUpdate();
+
+const net = { E: {}, len: {}, pulse: {}, lab: {}, gb: {}, db: {}, t: {} };
+(function buildNet() {
+  const svg = $('#net');
+  const gE = S('g', {}, svg), gN = S('g', {}, svg), gL = S('g', {}, svg), gP = S('g', {}, svg);
+  const cub = (sx, sy, ex, ey, k = 90) => `M${sx} ${sy} C${sx + k} ${sy}, ${ex - k} ${ey}, ${ex} ${ey}`;
+  const edge = (id, d, cls = '') => { const p = S('path', { d, class: 'edge ' + cls }, gE); net.E[id] = p; net.len[id] = p.getTotalLength(); net.pulse[id] = S('circle', { r: 6, class: 'pulse f', style: 'opacity:0' }, gP); };
+  edge('W11', cub(112, 130, 310, 130)); edge('W12', cub(112, 340, 310, 130)); edge('W21', cub(112, 130, 310, 340)); edge('W22', cub(112, 340, 310, 340));
+  edge('v1', cub(470, 130, 560, 235, 50)); edge('v2', cub(470, 340, 560, 235, 50));
+  edge('Lz', 'M720 235 L766 235', 'thin');
+  edge('b1', 'M390 62 L390 99', 'thin'); edge('b2', 'M390 408 L390 371', 'thin'); edge('c', 'M640 153 L640 204', 'thin');
+  const txt = (x, y, s, cls, p = gN) => { const t = S('text', { x, y, class: cls, 'text-anchor': 'middle' }, p); t.textContent = s; return t; };
+  // inputs
+  [['x1', 130, 'x₁'], ['x2', 340, 'x₂']].forEach(([id, y, l]) => {
+    S('circle', { cx: 80, cy: y, r: 32, class: 'node in' }, gN); txt(80, y - 8, l, 'cap-t'); net.t[id] = txt(80, y + 14, '', 'val');
+  });
+  // capsules
+  const capsule = (cx, cy, l, r, idl, idr) => {
+    S('rect', { x: cx - 80, y: cy - 31, width: 160, height: 62, rx: 31, class: 'node' }, gN);
+    S('line', { x1: cx, y1: cy - 31, x2: cx, y2: cy + 31, class: 'divl' }, gN);
+    txt(cx - 42, cy - 10, l, 'cap-t'); txt(cx + 42, cy - 10, r, 'cap-t');
+    net.t[idl] = txt(cx - 42, cy + 15, '', 'val'); net.t[idr] = txt(cx + 42, cy + 15, '', 'val');
+    S('circle', { cx, cy, r: 11, class: 'sig' }, gN); txt(cx, cy + 4, 'σ', 'sig-t');
+  };
+  capsule(390, 130, 'a₁', 'h₁', 'a1', 'h1'); capsule(390, 340, 'a₂', 'h₂', 'a2', 'h2'); capsule(640, 235, 'z', 'p̂', 'z', 'p');
+  S('circle', { cx: 800, cy: 235, r: 34, class: 'node' }, gN); txt(800, 227, 'L', 'cap-t'); net.t.L = txt(800, 250, '', 'val');
+  net.t.y = txt(800, 295, 'y = 1', 'ylab');
+  // labels
+  const pill = (cls, x, y) => { const g = S('g', { class: cls, transform: `translate(${x},${y})` }, gL); const r = S('rect', { x: -30, y: -11, width: 60, height: 22, rx: 11 }, g); const t = S('text', { x: 0, y: 4.5, 'text-anchor': 'middle' }, g); return { g, r, t, set(s) { t.textContent = s; const w = s.length * 7.25 + 16; r.setAttribute('x', -w / 2); r.setAttribute('width', w); } }; };
+  const at = (id, t) => net.E[id].getPointAtLength(net.len[id] * t);
+  const LABPOS = { W11: [at('W11', .5), 0, -25], W22: [at('W22', .5), 0, 25], W12: [at('W12', .27), 0, -25], W21: [at('W21', .27), 0, 25],
+    v1: [at('v1', .5), 0, -25], v2: [at('v2', .5), 0, 25], b1: [{ x: 390, y: 48 }, 100, 0], b2: [{ x: 390, y: 422 }, 100, 0], c: [{ x: 640, y: 140 }, 100, 0] };
+  for (const k of PN) { const [p, dx, dy] = LABPOS[k]; net.lab[k] = pill('lab', p.x, p.y); net.gb[k] = pill('badge', p.x + dx, p.y + dy); }
+  const DPOS = { z: [640, 288, 'δz'], a1: [348, 180, 'δa₁'], h1: [432, 180, 'δh₁'], a2: [348, 290, 'δa₂'], h2: [432, 290, 'δh₂'] };
+  for (const k in DPOS) { const [x, y] = DPOS[k]; net.db[k] = pill('dbadge', x, y); }
+  net.DLAB = DPOS;
+})();
+
+function setPulse(id, t, dir) {
+  const c = net.pulse[id], e = net.E[id];
+  if (t <= 0 || t >= 1) { c.style.opacity = 0; e.classList.remove('fwd', 'bwd'); return; }
+  const p = e.getPointAtLength(net.len[id] * (dir > 0 ? t : 1 - t));
+  c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.style.opacity = 1;
+  c.setAttribute('class', 'pulse ' + (dir > 0 ? 'f' : 'b'));
+  e.classList.toggle('fwd', dir > 0); e.classList.toggle('bwd', dir < 0);
+}
+const op = (el, v) => { el.style.opacity = v; };
+let ledgerKey = '';
+function ledger(key, html) { if (key !== ledgerKey) { $('#ledger').innerHTML = html; ledgerKey = key; } }
+function cacheRow(n, g = 0) {
+  const items = [['x', 0], ['a', 1], ['h', 2], ['z', 3], ['p̂', 4], ['L', 5]];
+  const gs = [['δz', 0], ['∇v, ∇c', 1], ['δh', 2], ['δa', 3], ['∇W, ∇b', 4]];
+  return `<div class="cache"><span style="border:0;padding-left:0">cache:</span>${items.map(([s, i]) => `<span class="${i <= n ? 'on' : ''}">${s}</span>`).join('')}` +
+    (g > 0 ? `<span style="border:0">grads:</span>${gs.map(([s, i]) => `<span class="g ${i < g ? 'on' : ''}">${s}</span>`).join('')}` : '') + '</div>';
+}
+
+function netRender(mode, t) {
+  let f = flat(SLIDE);
+  if (mode === 'update') { const k = ease(clamp(t * 1.3 - .1)); f = UPD.old.map((v, i) => lerp(v, UPD.nw[i], k)); }
+  const P = unflat(f), C = forward(P, EX.x), B = backward(P, C, EX.y), G = flat(B.g);
+  const exKey = EX.x.join(',');
+  // parameter labels + edge widths
+  PN.forEach((k, i) => {
+    net.lab[k].set(`${PL[k]} ${fmt(f[i], mode === 'update' ? 4 : 2)}`);
+    net.gb[k].set(`∇ ${fmt(G[i], 3)}`);
+    net.gb[k].g.classList.toggle('zero', Math.abs(G[i]) < 5e-4);
+    const e = net.E[k];
+    if (!['b1', 'b2', 'c'].includes(k)) { e.style.strokeWidth = 1.2 + 2.2 * Math.sqrt(Math.min(Math.abs(f[i]), 6)); e.classList.toggle('neg', f[i] < 0); }
+  });
+  net.t.x1.textContent = fmt(EX.x[0], 1); net.t.x2.textContent = fmt(EX.x[1], 1);
+  net.t.a1.textContent = fmt(C.a[0]); net.t.a2.textContent = fmt(C.a[1]);
+  net.t.h1.textContent = fmt(C.h[0]); net.t.h2.textContent = fmt(C.h[1]);
+  net.t.z.textContent = fmt(C.z); net.t.p.textContent = fmt(C.p); net.t.L.textContent = fmt(bce(EX.y, C.p));
+  net.db.z.set(`δz ${fmt(B.dz)}`); net.db.a1.set(`δa₁ ${fmt(B.da[0])}`); net.db.a2.set(`δa₂ ${fmt(B.da[1])}`);
+  net.db.h1.set(`δh₁ ${fmt(B.dh[0])}`); net.db.h2.set(`δh₂ ${fmt(B.dh[1])}`);
+
+  const V = { x: 1, a: 1, h: 1, z: 1, p: 1, L: 1 }, GV = {}, DV = {}, HL = new Set();
+  PN.forEach(k => GV[k] = 0); Object.keys(net.db).forEach(k => DV[k] = 0);
+  Object.keys(net.pulse).forEach(id => setPulse(id, 0, 1));
+
+  if (mode === 'arch') {
+    for (const k in V) V[k] = 0;
+    const grp = Math.floor(clamp(t * 1.15, 0, .999) * 4);
+    const groups = [['W11', 'W12', 'W21', 'W22'], ['b1', 'b2'], ['v1', 'v2'], ['c']];
+    groups[grp].forEach(k => HL.add(k));
+    const names = ['W — 4 weights, input → hidden', 'b — 2 hidden biases', 'v — 2 weights, hidden → output', 'c — 1 output bias'];
+    ledger('arch' + grp, `<div class="lhead">trainable parameters · 4 + 2 + 2 + 1 = 9</div>
+      <div>${K('\\theta = \\{W, \\mathbf b, \\mathbf v, c\\}')}</div>
+      <div class="mono" style="font-size:13px">highlighted: <b>${names[grp]}</b></div>`);
+  }
+  if (mode === 'forward') {
+    const s = Math.min(6, t * 6.6);
+    V.x = clamp(s / .5); V.a = clamp((s - 1.85) / .2); V.h = clamp((s - 2.4) / .3); V.z = clamp((s - 3.85) / .2); V.p = clamp((s - 4.4) / .3); V.L = clamp((s - 5.6) / .3);
+    for (const id of ['W11', 'W12', 'W21', 'W22', 'b1', 'b2']) setPulse(id, (s - 1) / .85, 1);
+    for (const id of ['v1', 'v2', 'c']) setPulse(id, (s - 3) / .85, 1);
+    setPulse('Lz', (s - 5) / .6, 1);
+    const k = Math.min(5, Math.floor(s));
+    const x = EX.x, L = bce(EX.y, C.p);
+    const eq = [
+      `\\mathbf x = ${vecT(x, 1)},\\qquad y = ${EX.y}`,
+      `\\mathbf a = W\\mathbf x+\\mathbf b = ${matT(P.W, 1)}${vecT(x, 1)} + ${vecT(P.b, 1)} = ${vecT(C.a)}`,
+      `\\mathbf h = \\sigma(\\mathbf a) = \\frac{1}{1+e^{-\\mathbf a}} = ${vecT(C.h)}`,
+      `z=\\mathbf v^\\top\\mathbf h+c = (${fmtT(P.v[0], 1)})(${fmtT(C.h[0])}) + (${fmtT(P.v[1], 1)})(${fmtT(C.h[1])}) + ${fmtT(P.c, 1)} = ${fmtT(C.z)}`,
+      `\\hat p = \\sigma(z) = \\sigma(${fmtT(C.z)}) = ${fmtT(C.p)}`,
+      `L = -y\\log\\hat p-(1-y)\\log(1-\\hat p) = -\\log(${fmtT(C.p)}) = ${fmtT(L)}`
+    ][k];
+    const head = ['input', 'hidden pre-activation', 'hidden activation', 'output pre-activation', 'prediction', 'loss'][k];
+    ledger('f' + k + exKey, `<div class="lhead">forward · step ${k + 1}/6 · ${head}</div><div>${K(eq, true)}</div>${cacheRow(k)}`);
+  }
+  if (mode === 'backward') {
+    const s = Math.min(6, t * 6.6);
+    setPulse('Lz', s / .7, -1);
+    DV.z = clamp((s - .7) / .2);
+    ['c', 'v1', 'v2'].forEach(k => GV[k] = clamp((s - 1.3) / .3));
+    for (const id of ['v1', 'v2']) setPulse(id, (s - 2) / .8, -1);
+    DV.h1 = DV.h2 = clamp((s - 2.8) / .2);
+    DV.a1 = DV.a2 = clamp((s - 3.4) / .3);
+    for (const id of ['W11', 'W12', 'W21', 'W22', 'b1', 'b2']) setPulse(id, (s - 4) / .8, -1);
+    ['W11', 'W12', 'W21', 'W22', 'b1', 'b2'].forEach(k => GV[k] = clamp((s - 4.8) / .2));
+    const k = Math.min(5, Math.floor(s));
+    const eq = [
+      `\\delta_z = \\hat p - y = ${fmtT(C.p)} - ${EX.y} = ${fmtT(B.dz)}`,
+      `\\nabla_c L = \\delta_z = ${fmtT(B.dz)},\\qquad \\nabla_{\\mathbf v}L = \\delta_z\\,\\mathbf h = (${fmtT(B.dz)})${vecT(C.h)} = ${vecT(B.g.v)}`,
+      `\\boldsymbol\\delta_h = \\delta_z\\,\\mathbf v = (${fmtT(B.dz)})${vecT(P.v, 1)} = ${vecT(B.dh)}`,
+      `\\boldsymbol\\delta_a = \\boldsymbol\\delta_h\\odot\\mathbf h\\odot(1-\\mathbf h) = ${vecT(B.dh)}\\odot${vecT(C.h.map(h => h * (1 - h)))} = ${vecT(B.da)}`,
+      `\\nabla_W L = \\boldsymbol\\delta_a\\mathbf x^\\top = ${vecT(B.da)}\\begin{pmatrix}${fmtT(EX.x[0], 1)} & ${fmtT(EX.x[1], 1)}\\end{pmatrix} = ${matT(B.g.W)},\\quad \\nabla_{\\mathbf b}L=\\boldsymbol\\delta_a`,
+      `\\nabla_W L = ${matT(B.g.W)}\\quad \\nabla_{\\mathbf b}L = ${vecT(B.g.b)}\\quad \\nabla_{\\mathbf v}L = ${vecT(B.g.v)}\\quad \\nabla_c L = ${fmtT(B.dz)}`
+    ][k];
+    const head = ['output error', 'output-layer gradients', 'back through v', 'back through σ', 'input-layer gradients', 'all 9 gradients'][k];
+    ledger('b' + k + exKey, `<div class="lhead">backward · step ${Math.min(k + 1, 5)}/5 · ${head}</div><div>${K(eq, true)}</div>${cacheRow(5, k + 1)}`);
+  }
+  if (mode === 'reuse') {
+    PN.forEach(k => GV[k] = 1); Object.keys(DV).forEach(k => DV[k] = 1);
+    const ph = Math.floor(clamp(t * 1.1, 0, .999) * 3);
+    const sets = [['d:z', 'c', 'v1', 'v2', 'd:h1', 'd:h2'], ['d:a1', 'W11', 'W12', 'b1'], ['d:a2', 'W21', 'W22', 'b2']];
+    sets[ph].forEach(k => HL.add(k));
+    const msg = [
+      `${K('\\delta_z')} computed <b>once</b> → used by ${K('\\nabla_c,\\ \\nabla_{v_1},\\ \\nabla_{v_2},\\ \\delta_{h_1},\\ \\delta_{h_2}')}`,
+      `${K('\\delta_{a_1}')} computed <b>once</b> → used by ${K('\\nabla_{W_{11}},\\ \\nabla_{W_{12}},\\ \\nabla_{b_1}')}`,
+      `${K('\\delta_{a_2}')} computed <b>once</b> → used by ${K('\\nabla_{W_{21}},\\ \\nabla_{W_{22}},\\ \\nabla_{b_2}')}`][ph];
+    ledger('r' + ph + exKey, `<div class="lhead">reuse · ${ph + 1}/3</div><div style="font-size:16px">${msg}</div>
+      <div class="mono" style="font-size:12px;color:var(--muted)">5 deltas computed · 9 gradients produced · no chain-rule product computed twice</div>`);
+  }
+  if (mode === 'update') {
+    const k = ease(clamp(t * 1.3 - .1));
+    PN.forEach(n => GV[n] = 1 - k);
+    const rows = PN.map((n, i) => `<tr class="${Math.abs(UPD.G[i]) < 5e-4 ? 'zero' : ''}"><td>${PL[n]}</td><td>${fmt(UPD.old[i], 4)}</td><td class="g">${fmt(UPD.G[i], 4)}</td><td><b>${fmt(UPD.nw[i], 4)}</b></td></tr>`).join('');
+    ledger('u' + exKey, `<div class="lhead" style="text-transform:none;letter-spacing:.04em;font-size:12px">θ ← θ − 0.1 · ∇θL &nbsp;·&nbsp; p̂ ${fmt(UPD.p0, 4)} → ${fmt(UPD.p1, 4)} &nbsp;·&nbsp; L ${fmt(UPD.L0, 4)} → ${fmt(UPD.L1, 4)}</div>
+      <table><tr><th>param</th><th>before</th><th>∇</th><th>after</th></tr>${rows}</table>`);
+  }
+  // apply visibility
+  op(net.t.x1, V.x); op(net.t.x2, V.x); op(net.t.a1, V.a); op(net.t.a2, V.a); op(net.t.h1, V.h); op(net.t.h2, V.h);
+  op(net.t.z, V.z); op(net.t.p, V.p); op(net.t.L, V.L); op(net.t.y, mode === 'arch' ? 0 : 1);
+  net.t.y.textContent = `y = ${EX.y}`;
+  PN.forEach(k => { op(net.gb[k].g, GV[k]); net.lab[k].g.classList.toggle('hl', HL.has(k)); net.gb[k].g.classList.toggle('hl', HL.has(k) && mode === 'reuse'); });
+  for (const k in net.db) { op(net.db[k].g, DV[k]); net.db[k].g.classList.toggle('hl', HL.has('d:' + k)); }
+}
+
+/* ===================== generic plots ===================== */
+function axes(svg, box, xs, ys, xl, yl) {
+  const [x0, y0, x1, y1] = box;
+  const X = v => lerp(x0, x1, (v - xs[0]) / (xs[1] - xs[0])), Y = v => lerp(y1, y0, (v - ys[0]) / (ys[1] - ys[0]));
+  const g = S('g', {}, svg);
+  return { X, Y, g, ticks(xt, yt, fx = v => v, fy = v => v) {
+    for (const v of xt) { S('line', { x1: X(v), x2: X(v), y1: y0, y2: y1, class: 'grid' }, g); const t = S('text', { x: X(v), y: y1 + 18, class: 'tick', 'text-anchor': 'middle' }, g); t.textContent = fx(v); }
+    for (const v of yt) { S('line', { x1: x0, x2: x1, y1: Y(v), y2: Y(v), class: 'grid' }, g); const t = S('text', { x: x0 - 8, y: Y(v) + 4, class: 'tick', 'text-anchor': 'end' }, g); t.textContent = fy(v); }
+    S('line', { x1: x0, x2: x1, y1: y1, y2: y1, class: 'axis' }, g); S('line', { x1: x0, x2: x0, y1: y0, y2: y1, class: 'axis' }, g);
+    if (xl) { const t = S('text', { x: x1, y: y1 + 36, class: 'axlab', 'text-anchor': 'end' }, g); t.textContent = xl; }
+    if (yl) { const t = S('text', { x: x0, y: y0 - 10, class: 'axlab' }, g); t.textContent = yl; }
+  } };
+}
+const pathFrom = (pts) => 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
+
+/* ===================== scene: loss ===================== */
+const LS = (() => {
+  const svg = $('#loss-svg'); const A = axes(svg, [70, 30, 630, 360], [0, 1], [0, 5], 'p̂ (predicted probability of class 1)', 'L');
+  A.ticks([0, .25, .5, .75, 1], [0, 1, 2, 3, 4, 5]);
+  const P1 = [], P0 = [];
+  for (let i = 0; i <= 300; i++) { const p = .0067 + i / 300 * (1 - .0134); P1.push([A.X(p), A.Y(Math.min(5, -Math.log(p)))]); P0.push([A.X(p), A.Y(Math.min(5, -Math.log(1 - p)))]); }
+  S('path', { d: pathFrom(P0), class: 'curve', stroke: '#2f5d8a', opacity: .35 }, svg);
+  S('path', { d: pathFrom(P1), class: 'curve', stroke: '#e3962f' }, svg);
+  const l1 = S('text', { x: A.X(.06), y: A.Y(4.3), class: 'tick', fill: '#b86f10', style: 'font-weight:600' }, svg); l1.textContent = 'y = 1:  −log p̂';
+  const l0 = S('text', { x: A.X(.72), y: A.Y(4.3), class: 'tick', style: 'fill:#2f5d8a;opacity:.6' }, svg); l0.textContent = 'y = 0:  −log(1 − p̂)';
+  const ex = S('g', {}, svg); const exc = S('circle', { r: 6, fill: '#fff', stroke: '#1c1a17', 'stroke-width': 2 }, ex);
+  const ext = S('text', { class: 'tick', style: 'fill:#1c1a17' }, ex);
+  const vline = S('line', { stroke: '#1c1a17', 'stroke-dasharray': '4 4' }, svg), hline = S('line', { stroke: '#1c1a17', 'stroke-dasharray': '4 4' }, svg);
+  const m = S('circle', { r: 9, fill: '#c2452d', stroke: '#fff', 'stroke-width': 2.5 }, svg);
+  return { A, render(t) {
+    const p = lerp(.97, .012, ease(t)), L = -Math.log(p);
+    const x = A.X(p), y = A.Y(Math.min(5, L));
+    m.setAttribute('cx', x); m.setAttribute('cy', y);
+    vline.setAttribute('x1', x); vline.setAttribute('x2', x); vline.setAttribute('y1', y); vline.setAttribute('y2', A.Y(0));
+    hline.setAttribute('x1', A.X(0)); hline.setAttribute('x2', x); hline.setAttribute('y1', y); hline.setAttribute('y2', y);
+    m.setAttribute('fill', L > 2 ? '#c2452d' : L > .7 ? '#e3962f' : '#16807a');
+    const pe = UPD.p0; exc.setAttribute('cx', A.X(pe)); exc.setAttribute('cy', A.Y(-Math.log(pe)));
+    ext.setAttribute('x', A.X(pe) + 10); ext.setAttribute('y', A.Y(-Math.log(pe)) - 10); ext.textContent = `our example: p̂ = ${fmt(pe)}, L = ${fmt(UPD.L0)}`;
+    const verdict = L < .2 ? 'confident and right → tiny loss' : L < .8 ? 'unsure → moderate loss' : L < 2 ? 'leaning wrong → big loss' : 'confident and WRONG → huge loss';
+    $('#loss-read').innerHTML = `<span class="k">y = 1 ·</span> p̂ = ${fmt(p)} <span class="k">→</span> L = ${fmt(L)} <span class="k">· ${verdict} · δz = p̂ − y = ${fmt(p - 1)}</span>`;
+  } };
+})();
+
+/* ===================== scene: descent ===================== */
+const DS = { svg: $('#desc-svg'), built: '' };
+function renderDescent(t) {
+  const key = EX.x.join(',');
+  const g2 = UPD.G.reduce((s, v) => s + v * v, 0);
+  const fAt = eta => bce(EX.y, forward(unflat(UPD.old.map((v, i) => v - eta * UPD.G[i])), EX.x).p);
+  const EMAX = .6;
+  if (DS.built !== key) {
+    DS.svg.innerHTML = ''; DS.built = key;
+    const vals = []; for (let i = 0; i <= 200; i++) vals.push(fAt(i / 200 * EMAX));
+    const lo = Math.min(...vals, UPD.L0 - g2 * EMAX * .35), hi = Math.max(...vals);
+    const pad = (hi - lo) * .12;
+    const A = axes(DS.svg, [80, 30, 630, 360], [0, EMAX], [lo - pad, hi + pad], 'η (step size along −∇L)', 'L(θ − η∇L)');
+    A.ticks([0, .1, .2, .3, .4, .5, .6], [lo, (lo + hi) / 2, hi], v => v.toFixed(1), v => v.toFixed(3));
+    S('line', { x1: A.X(.1), x2: A.X(.1), y1: 30, y2: 360, stroke: '#f2b705', 'stroke-width': 2, 'stroke-dasharray': '5 4' }, DS.svg);
+    const tl = S('text', { x: A.X(.1) + 6, y: 46, class: 'tick', style: 'fill:#1c1a17;font-weight:600' }, DS.svg); tl.textContent = 'η = 0.1 (our step)';
+    S('path', { d: pathFrom(vals.map((v, i) => [A.X(i / 200 * EMAX), A.Y(v)])), class: 'curve', stroke: '#1c1a17' }, DS.svg);
+    const tEnd = Math.min(EMAX, (UPD.L0 - (lo - pad)) / g2 * .98);
+    DS.tan = S('line', { x1: A.X(0), y1: A.Y(UPD.L0), x2: A.X(tEnd), y2: A.Y(UPD.L0 - g2 * tEnd), stroke: '#c2452d', 'stroke-width': 2, 'stroke-dasharray': '1000', 'stroke-dashoffset': '1000' }, DS.svg);
+    DS.tanLab = S('text', { x: A.X(tEnd * .55) + 8, y: A.Y(UPD.L0 - g2 * tEnd * .55) + 22, class: 'tick', style: 'fill:#c2452d;font-weight:600' }, DS.svg);
+    DS.tanLab.textContent = `slope −‖∇L‖² = ${fmt(-g2)}`;
+    DS.ball = S('circle', { r: 10, fill: '#16807a', stroke: '#fff', 'stroke-width': 3 }, DS.svg);
+    DS.A = A;
+  }
+  const A = DS.A;
+  const tp = clamp(t / .45); DS.tan.setAttribute('stroke-dashoffset', 1000 * (1 - tp)); op(DS.tanLab, tp);
+  const eta = .1 * ease(clamp((t - .45) / .5));
+  const L = fAt(eta);
+  DS.ball.setAttribute('cx', A.X(eta)); DS.ball.setAttribute('cy', A.Y(L));
+  $('#desc-read').innerHTML = `<span class="k">η =</span> ${fmt(eta)} <span class="k">· L =</span> ${fmt(L, 4)} <span class="k">· start ${fmt(UPD.L0, 4)} · ‖∇L‖² = ${fmt(g2, 4)}</span>`;
+}
+
+/* ===================== scene: batch ===================== */
+const BT = (() => {
+  const f0 = flat(SLIDE);
+  const per = TRAIN.map(([x, y, c]) => { const C = forward(SLIDE, [x, y]); return { g: flat(backward(SLIDE, C, c).g), L: bce(c, C.p) }; });
+  const cum = [new Array(9).fill(0)]; const cumL = [0];
+  per.forEach((q, i) => { cum.push(cum[i].map((v, k) => v + q.g[k])); cumL.push(cumL[i] + q.L); });
+  const scale = Math.max(...per.flatMap(q => q.g.map(Math.abs)));
+  const svg = $('#bars'); const y0 = 115, H = 95, bw = 46, gap = (600 - 9 * bw) / 8;
+  S('line', { x1: 30, x2: 640, y1: y0, y2: y0, class: 'axis' }, svg);
+  const bars = PN.map((n, i) => {
+    const x = 34 + i * (bw + gap);
+    const ghost = S('rect', { x, width: bw, fill: 'none', stroke: '#1c1a17', 'stroke-dasharray': '3 3', 'stroke-width': 1.3 }, svg);
+    const bar = S('rect', { x: x + 7, width: bw - 14, fill: '#c2452d' }, svg);
+    const lab = S('text', { x: x + bw / 2, y: 226, class: 'tick', 'text-anchor': 'middle', style: 'fill:#1c1a17;font-size:13px' }, svg); lab.textContent = '∇' + PL[n];
+    const val = S('text', { x: x + bw / 2, class: 'tick', 'text-anchor': 'middle' }, svg);
+    return { ghost, bar, val };
+  });
+  const setR = (r, v) => { const h = Math.min(H, Math.abs(v) / scale * H); r.setAttribute('y', v >= 0 ? y0 - h : y0); r.setAttribute('height', Math.max(h, .5)); };
+  return { render(t) {
+    const k = Math.round(clamp(t * 1.08) * 80);
+    const mean = k ? cum[k].map(v => v / k) : new Array(9).fill(0);
+    const cur = k ? per[k - 1].g : null;
+    bars.forEach((b, i) => {
+      setR(b.bar, mean[i]); b.ghost.style.opacity = cur ? 1 : 0; if (cur) setR(b.ghost, cur[i]);
+      b.val.textContent = k ? fmt(mean[i]) : ''; b.val.setAttribute('y', mean[i] >= 0 ? y0 + 16 : y0 - 6);
+    });
+    drawField($('#cv-batch'), { f: f0, n: 56, fieldAlpha: .55, points: TRAIN.map(([x, y, c], i) => ({ x, y, c, a: i < k ? 1 : .22, hl: i === k - 1, r: i === k - 1 ? 6.5 : 4.5 })) });
+    $('#batch-read').innerHTML = k ? `<span class="k">point</span> ${k}/80 <span class="k">· its loss</span> ${fmt(per[k - 1].L)} <span class="k">· running mean loss</span> ${fmt(cumL[k] / k)}${k === 80 ? ' <span class="k">→ one update uses this mean</span>' : ''}` : '<span class="k">at the slide parameters, before any update</span>';
+  } };
+})();
+
+/* ===================== loss-over-time plots ===================== */
+function timePlot(svg, series, ymax) {
+  const A = axes(svg, [60, 12, 640, 118], [0, 2000], [0, ymax], 'update', 'mean train BCE');
+  A.ticks([0, 500, 1000, 1500, 2000], [0, .25, .5, .75], v => v, v => v.toFixed(2));
+  const defs = S('defs', {}, svg); const id = 'clip' + Math.random().toString(36).slice(2);
+  const cp = S('clipPath', { id }, defs); const cr = S('rect', { x: 0, y: 0, width: 0, height: 150 }, cp);
+  series.forEach(s => {
+    const pts = s.data.map((v, i) => [A.X(i), A.Y(Math.min(v, ymax))]);
+    S('path', { d: pathFrom(pts), class: 'curve', stroke: s.color, 'stroke-width': 2, opacity: .18 }, svg);
+    if (s.main) S('path', { d: pathFrom(pts), class: 'curve', stroke: s.color, 'stroke-width': 2.5, 'clip-path': `url(#${id})` }, svg);
+    if (s.label) { const t = S('text', { x: A.X(s.lx), y: A.Y(s.ly), class: 'tick', style: `fill:${s.color};font-weight:600` }, svg); t.textContent = s.label; }
+  });
+  const main = series.find(s => s.main);
+  const m = S('circle', { r: 5.5, fill: main.color, stroke: '#fff', 'stroke-width': 2 }, svg);
+  return e => { cr.setAttribute('width', A.X(e)); m.setAttribute('cx', A.X(e)); m.setAttribute('cy', A.Y(Math.min(main.data[e], ymax))); };
+}
+const chips = (el, f) => { el.innerHTML = PN.map((n, i) => `<span><i>${PL[n]}</i> ${fmt(f[i], 2)}</span>`).join(''); };
+
+/* ===================== scene: train / test ===================== */
+const trainPlot = timePlot($('#train-loss'), [{ data: RUN.losses, color: '#16807a', main: true }], .75);
+const evTr = evaluate(FINAL, TRAIN), evTe = evaluate(FINAL, TEST);
+$('#result').innerHTML = `<tr><th>split</th><th>mean BCE</th><th>accuracy</th><th>examples</th></tr>
+  <tr><td>train</td><td>${fmt(evTr.L, 4)}</td><td>${fmt(evTr.acc, 3)}</td><td>80</td></tr>
+  <tr><td>test</td><td>${fmt(evTe.L, 4)}</td><td>${fmt(evTe.acc, 3)}</td><td>20</td></tr>`;
+function renderTrain(t, test = 0) {
+  const e = test ? 2000 : Math.round(2000 * Math.pow(clamp(t * 1.06), 1.8));
+  const f = RUN.snaps[e];
+  const pts = TRAIN.map(([x, y, c]) => ({ x, y, c, r: 4.5, a: test ? 1 - .45 * clamp(test * 3) : 1 }));
+  if (test) TEST.forEach(([x, y, c], i) => pts.push({ x, y, c, kind: 'test', r: 6, a: clamp(test * 3 - .3), bad: test > .5 && evTe.wrong.includes(i) }));
+  drawField($('#cv-train'), { f, n: 72, lines: true, points: pts });
+  trainPlot(e);
+  const ev = evaluate(f, TRAIN);
+  $('#train-read').innerHTML = `<span class="k">update</span> <span class="big-count">${e.toLocaleString('en')}</span> / 2,000 <span class="k">· train BCE</span> ${fmt(RUN.losses[e], 4)} <span class="k">· train acc</span> ${fmt(ev.acc, 3)}`;
+  chips($('#train-chips'), f);
+  $('#result').style.opacity = test ? clamp(test * 3 - .6) : 0;
+  $('#train-chips').style.display = test ? 'none' : '';
+}
+
+/* ===================== scene: zero init ===================== */
+const zeroPlot = timePlot($('#zero-loss'), [
+  { data: RUN.losses, color: '#16807a', label: 'slide init', lx: 900, ly: .2 },
+  { data: ZRUN.losses, color: '#c2452d', main: true, label: 'zero init: stuck at log 2', lx: 1100, ly: .63 }], .75);
+function renderZero(t) {
+  const e = Math.round(2000 * clamp(t * 1.06)); const f = ZRUN.snaps[e];
+  drawField($('#cv-zero'), { f, n: 40, points: TRAIN.map(([x, y, c]) => ({ x, y, c, r: 4.5 })) });
+  zeroPlot(e); chips($('#zero-chips'), f);
+  const C = forward(unflat(f), [1, -1]);
+  $('#zero-read').innerHTML = `<span class="k">update</span> <span class="big-count">${e.toLocaleString('en')}</span> / 2,000 <span class="k">· BCE</span> ${fmt(ZRUN.losses[e], 4)} <span class="k">· h₁ = h₂ =</span> ${fmt(C.h[0])} <span class="k">· p̂ =</span> ${fmt(C.p)} <span class="k">everywhere</span>`;
+}
+
+/* ===================== scrollytelling wiring ===================== */
+const STEPS = {
+  'data-intro': ['data', t => renderData(t, 0)],
+  'data-split': ['data', t => renderData(1, Math.max(t, .001))],
+  'arch': ['net', t => netRender('arch', t)],
+  'inits': ['inits', () => renderInits()],
+  'forward': ['net', t => netRender('forward', t)],
+  'loss': ['loss', t => LS.render(t)],
+  'backward': ['net', t => netRender('backward', t)],
+  'reuse': ['net', t => netRender('reuse', t)],
+  'update': ['net', t => netRender('update', t)],
+  'descent': ['descent', t => renderDescent(t)],
+  'batch': ['batch', t => BT.render(t)],
+  'train': ['train', t => renderTrain(t)],
+  'test': ['train', t => renderTrain(1, Math.max(t, .001))],
+  'zero': ['zero', t => renderZero(t)],
+};
+const scenes = {}; document.querySelectorAll('.scene').forEach(s => scenes[s.dataset.scene] = s);
+const stepEls = [...document.querySelectorAll('.step')];
+let active = null, target = 0, cur = 0;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function activate(el, prog) {
+  if (active === el) return;
+  active = el; stepEls.forEach(s => s.classList.toggle('active', s === el));
+  const [sc] = STEPS[el.dataset.step];
+  for (const k in scenes) scenes[k].classList.toggle('on', k === sc);
+  $('#chap').textContent = el.dataset.chapter;
+  target = cur = prog; ledgerKey = '';
+  STEPS[el.dataset.step][1](cur);
+}
+const mobile = matchMedia('(max-width:900px)').matches;
+gsap.registerPlugin(ScrollTrigger);
+stepEls.forEach(el => {
+  ScrollTrigger.create({
+    trigger: el, start: mobile ? 'top 85%' : 'top 62%', end: mobile ? 'bottom 85%' : 'bottom 62%',
+    onToggle: self => { if (self.isActive) activate(el, self.progress); },
+    onUpdate: self => { if (active === el) target = self.progress; },
+  });
+});
+function tick() {
+  if (active) {
+    const d = target - cur;
+    if (Math.abs(d) > 1e-4) { cur = reduce ? target : cur + d * .2; STEPS[active.dataset.step][1](cur); }
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+// before the first step: show the data scene empty
+if (!active) { scenes.data.classList.add('on'); renderData(0, 0); }
+
+// example toggle
+document.querySelectorAll('#ex-toggle button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#ex-toggle button').forEach(x => x.classList.toggle('on', x === b));
+  EX.x = b.dataset.x.split(',').map(Number); computeUpdate(); ledgerKey = ''; DS.built = '';
+  if (active) STEPS[active.dataset.step][1](cur);
+}));
+
+// progress bar
+const bar = $('#bar');
+addEventListener('scroll', () => { const h = document.documentElement.scrollHeight - innerHeight; bar.style.width = (100 * scrollY / h) + '%'; if (scrollY < innerHeight * .5) $('#chap').textContent = ''; }, { passive: true });
+addEventListener('resize', () => { if (active) STEPS[active.dataset.step][1](cur); pgDraw(); });
+
+// math in text
+renderMathInElement(document.body, { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }], ignoredClasses: ['ledger'] });
+document.fonts && document.fonts.ready.then(() => { ScrollTrigger.refresh(); if (active) STEPS[active.dataset.step][1](cur); pgDraw(); });
+
+/* ===================== playground ===================== */
+const PG = { f: flat(SLIDE), e: 0, losses: [], playing: false, lr: .5, sp: 4, test: false, probe: null, init: 'slide' };
+function pgInit() {
+  const r = () => { let u = 0, v = 0; while (!u) u = Math.random(); v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const map = { slide: SLIDE, seed0: SEED0, seed1: SEED1, zero: ZEROS };
+  PG.f = PG.init === 'random' ? Array.from({ length: 9 }, r) : flat(map[PG.init]);
+  PG.e = 0; PG.losses = [evaluate(PG.f, TRAIN).L]; pgDraw();
+}
+function pgStep(n) {
+  for (let i = 0; i < n; i++) {
+    const { G } = batchGrad(unflat(PG.f), TRAIN);
+    PG.f = PG.f.map((v, k) => v - PG.lr * G[k]); PG.e++;
+    PG.losses.push(evaluate(PG.f, TRAIN).L);
+  }
+}
+function pgDraw() {
+  const pts = TRAIN.map(([x, y, c]) => ({ x, y, c, r: 4.5 }));
+  if (PG.test) TEST.forEach(([x, y, c]) => pts.push({ x, y, c, kind: 'test', r: 6 }));
+  const geo = drawField($('#cv-pg'), { f: PG.f, n: 72, lines: true, points: pts });
+  if (PG.probe) {
+    const ctx = $('#cv-pg').getContext('2d'), [px, py] = PG.probe, d = geo.d;
+    ctx.beginPath(); ctx.arc(geo.X(px), geo.Y(py), 7 * d, 0, 7); ctx.fillStyle = '#1c1a17'; ctx.fill();
+    ctx.beginPath(); ctx.arc(geo.X(px), geo.Y(py), 3 * d, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+    const C = forward(unflat(PG.f), [px, py]);
+    $('#pg-probe').innerHTML = `x = (${fmt(px, 2)}, ${fmt(py, 2)}) → a = (${fmt(C.a[0], 2)}, ${fmt(C.a[1], 2)}) → h = (${fmt(C.h[0])}, ${fmt(C.h[1])}) → z = ${fmt(C.z, 2)} → <b style="color:var(--ink)">p̂ = ${fmt(C.p)}</b> (class ${C.p >= .5 ? 1 : 0})`;
+  }
+  const tr = evaluate(PG.f, TRAIN), te = evaluate(PG.f, TEST);
+  $('#pg-e').textContent = PG.e.toLocaleString('en'); $('#pg-l').textContent = fmt(PG.losses[PG.losses.length - 1], 4);
+  $('#pg-a').textContent = `${fmt(tr.acc, 2)} / ${fmt(te.acc, 2)}`;
+  // sparkline
+  const c = $('#pg-spark'), d = fit(c), ctx = c.getContext('2d'), W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  const L = PG.losses, mx = Math.max(.8, ...L.slice(0, 50)), n = Math.max(L.length - 1, 1);
+  ctx.strokeStyle = 'rgba(28,26,23,.12)'; ctx.lineWidth = d; const yl = H - (Math.log(2) / mx) * (H - 12 * d) - 6 * d;
+  ctx.setLineDash([4 * d, 4 * d]); ctx.beginPath(); ctx.moveTo(0, yl); ctx.lineTo(W, yl); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(28,26,23,.45)'; ctx.font = `${10 * d}px JetBrains Mono, monospace`; ctx.fillText('log 2', 4 * d, yl - 4 * d);
+  ctx.strokeStyle = '#16807a'; ctx.lineWidth = 2 * d; ctx.beginPath();
+  L.forEach((v, i) => { const x = i / n * W, y = H - (Math.min(v, mx) / mx) * (H - 12 * d) - 6 * d; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+}
+function pgLoop() { if (PG.playing) { pgStep(PG.sp); pgDraw(); requestAnimationFrame(pgLoop); } }
+document.querySelectorAll('#pg-init button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#pg-init button').forEach(x => x.classList.toggle('on', x === b)); PG.init = b.dataset.init; pgInit();
+}));
+$('#pg-lr').addEventListener('input', e => { PG.lr = Math.pow(10, +e.target.value); $('#pg-lr-v').textContent = PG.lr.toFixed(PG.lr < .1 ? 3 : 2); });
+$('#pg-sp').addEventListener('input', e => { PG.sp = +e.target.value; $('#pg-sp-v').textContent = PG.sp; });
+$('#pg-play').addEventListener('click', () => { PG.playing = !PG.playing; $('#pg-play').textContent = PG.playing ? '❚❚ pause' : '▶ train'; if (PG.playing) pgLoop(); });
+$('#pg-step').addEventListener('click', () => { pgStep(1); pgDraw(); });
+$('#pg-reset').addEventListener('click', pgInit);
+$('#pg-test').addEventListener('click', () => { PG.test = !PG.test; $('#pg-test').classList.toggle('primary', PG.test); $('#pg-test').textContent = PG.test ? 'hide test points' : 'show test points'; pgDraw(); });
+$('#cv-pg').addEventListener('click', e => { const r = e.target.getBoundingClientRect(); PG.probe = [-DOM + (e.clientX - r.left) / r.width * 2 * DOM, DOM - (e.clientY - r.top) / r.height * 2 * DOM]; pgDraw(); });
+pgInit();
+}
+</script>
+</body>
+</html>
